@@ -69,6 +69,33 @@ jobs:
             --output trivy-${{ matrix.name }}.html \
             ${{ matrix.image }}
 
+      - name: Estrai metadati immagine
+        run: |
+          # Estrai metadata dal JSON Trivy già prodotto
+          python3 - <<'EOF'
+          import json, sys
+          
+          with open("trivy-${{ matrix.name }}.json") as f:
+              data = json.load(f)
+          
+          metadata = data.get("Metadata", {})
+          image_config = metadata.get("ImageConfig", {})
+          
+          info = {
+              "image": "${{ matrix.image }}",
+              "name": "${{ matrix.name }}",
+              "created": image_config.get("created", "N/A"),
+              "os": image_config.get("os", "N/A"),
+              "architecture": image_config.get("architecture", "N/A"),
+              "docker_version": image_config.get("docker_version", "N/A"),
+          }
+          
+          with open("metadata-${{ matrix.name }}.json", "w") as f:
+              json.dump(info, f, indent=2)
+          
+          print(json.dumps(info, indent=2))
+          EOF
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -76,4 +103,5 @@ jobs:
           path: |
             trivy-${{ matrix.name }}.json
             trivy-${{ matrix.name }}.html
+            metadata-${{ matrix.name }}.json
           retention-days: 30
