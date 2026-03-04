@@ -1,0 +1,79 @@
+name: Container Security Scan
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # ogni lunedì mattina
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    permissions:
+      security-events: write
+      actions: read
+
+    strategy:
+      matrix:
+        include:
+          - image: registry.access.redhat.com/ubi9/openjdk-21:1.23-6.1758133910
+            name: redhat-openjdk21-catalog
+          - image: python:3.13.9-slim
+            name: python-slim-catalog
+          - image: registry.access.redhat.com/ubi9/openjdk-21:1.24-2.1772091453
+            name: redhat-openjdk21-latest
+          - image: registry.access.redhat.com/ubi10/python-312-minimal:10.1
+            name: redhat-python-312-minimal
+
+    steps:
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Scan image - ${{ matrix.name }}
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --exit-code 0 \
+            --format sarif \
+            --output trivy-${{ matrix.name }}.sarif \
+            ${{ matrix.image }}
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: ${{ matrix.name }}
+
+      - name: Scan image (JSON)
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --format json \
+            --output trivy-${{ matrix.name }}.json \
+            ${{ matrix.image }}
+
+      - name: Scarica template HTML Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/html.tpl \
+            -o html.tpl
+
+      - name: Genera report HTML
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --format template \
+            --template "@html.tpl" \
+            --output trivy-${{ matrix.name }}.html \
+            ${{ matrix.image }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report-${{ matrix.name }}
+          path: |
+            trivy-${{ matrix.name }}.json
+            trivy-${{ matrix.name }}.html
+          retention-days: 30
